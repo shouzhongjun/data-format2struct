@@ -103,10 +103,16 @@ export default function Home() {
 
   return (
     <div className="min-h-screen p-8 bg-gray-100 font-mono">
-      <h1 className="text-3xl font-bold mb-6 flex items-center gap-2">
-        🧱 <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-green-500">
-          数据格式 ➜ Go 结构体
-        </span>
+      <h1 className="text-3xl font-bold mb-6 flex items-center gap-3">
+        <img src="/gopher.png" alt="Go Gopher" className="w-10 h-10" />
+        <div className="flex flex-col">
+          <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-green-500">
+            Go Struct
+          </span>
+          <span className="text-base font-normal text-gray-600">
+            在线数据结构转换工具
+          </span>
+        </div>
       </h1>
 
       <div className="flex gap-4 mb-6 flex-wrap">
