@@ -529,62 +529,50 @@ function protoTypeToGo(type: string): string {
 // XML 转 Go 结构体
 function xmlToGo(xml: string): string {
   try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xml, 'text/xml');
-    const root = doc.documentElement;
+    // 移除 XML 声明
+    xml = xml.replace(/<\?xml[^>]+\?>/, '').trim();
     
-    return processXMLNode(root, capitalizeFirst(root.tagName));
-  } catch (e) {
-    throw new Error('XML 解析错误');
-  }
-}
-
-function processXMLNode(node: Element, structName: string, seen = new Set<string>()): string {
-  if (seen.has(structName)) {
-    return '';
-  }
-  seen.add(structName);
-
-  let struct = `type ${structName} struct {\n`;
-  const nestedStructs: string[] = [];
-  const fields = new Map<string, { type: string; isArray: boolean }>();
-
-  // 处理子元素
-  for (const child of Array.from(node.children)) {
-    const fieldName = capitalizeFirst(child.tagName);
-    const existingField = fields.get(fieldName);
-
-    if (child.children.length === 0 || (child.children.length === 1 && child.children[0].nodeType === 3)) {
-      // 简单值
-      const value = child.textContent?.trim() || '';
-      const type = inferTypeFromValue(value);
+    // 提取根元素名称
+    const rootMatch = xml.match(/<([^\s>]+)/);
+    if (!rootMatch) {
+      throw new Error('无法找到根元素');
+    }
+    
+    const rootName = rootMatch[1];
+    const structName = toPascalCase(rootName);
+    let struct = `type ${structName} struct {\n`;
+    
+    // 提取字段
+    const fields = new Map<string, { type: string; isArray: boolean }>();
+    const fieldRegex = /<([^>/]+)>([^<]*)<\/\1>/g;
+    let match;
+    
+    while ((match = fieldRegex.exec(xml)) !== null) {
+      const [, fieldName, value] = match;
+      const existingField = fields.get(fieldName);
       
       if (existingField) {
         existingField.isArray = true;
       } else {
-        fields.set(fieldName, { type, isArray: false });
-      }
-    } else {
-      // 复杂类型
-      const nestedStructName = structName + fieldName;
-      nestedStructs.push(processXMLNode(child, nestedStructName, seen));
-      
-      if (existingField) {
-        existingField.isArray = true;
-      } else {
-        fields.set(fieldName, { type: nestedStructName, isArray: false });
+        fields.set(fieldName, {
+          type: inferTypeFromValue(value),
+          isArray: false
+        });
       }
     }
+    
+    // 生成结构体字段
+    for (const [fieldName, { type, isArray }] of fields) {
+      const goFieldName = toPascalCase(fieldName);
+      const goFieldType = isArray ? `[]${type}` : type;
+      struct += `\t${goFieldName} ${goFieldType} \`xml:"${fieldName}" json:"${fieldName}"\`\n`;
+    }
+    
+    struct += "}\n";
+    return struct;
+  } catch (e) {
+    throw new Error('XML 解析错误: ' + (e instanceof Error ? e.message : '未知错误'));
   }
-
-  // 生成字段
-  for (const [fieldName, { type, isArray }] of fields) {
-    const fieldType = isArray ? `[]${type}` : type;
-    struct += `\t${fieldName} ${fieldType} \`xml:"${fieldName.toLowerCase()}" json:"${fieldName.toLowerCase()}"\`\n`;
-  }
-
-  struct += "}\n\n";
-  return nestedStructs.join('') + struct;
 }
 
 function inferTypeFromValue(value: string): string {
@@ -760,7 +748,31 @@ export function validateFormat(input: string, type: 'json' | 'yaml' | 'sql' | 'p
         }
         return { isValid: true };
       case 'xml':
-        new DOMParser().parseFromString(input, 'text/xml');
+        // 简单的 XML 格式验证
+        if (!input.trim().startsWith('<?xml') && !input.trim().startsWith('<')) {
+          return { isValid: false, error: "无效的 XML 格式" };
+        }
+        // 检查标签是否配对
+        const tags: string[] = [];
+        const matches = input.match(/<\/?[^>]+>/g);
+        if (!matches) {
+          return { isValid: false, error: "未找到有效的 XML 标签" };
+        }
+        for (const tag of matches) {
+          if (tag.startsWith('</')) {
+            // 闭合标签
+            const lastTag = tags.pop();
+            if (!lastTag || !tag.includes(lastTag.slice(1, -1))) {
+              return { isValid: false, error: "XML 标签不匹配" };
+            }
+          } else if (!tag.endsWith('/>') && !tag.startsWith('<?')) {
+            // 开始标签
+            tags.push(tag);
+          }
+        }
+        if (tags.length > 0) {
+          return { isValid: false, error: "存在未闭合的 XML 标签" };
+        }
         return { isValid: true };
       case 'csv':
         const csvLines = input.split(/\r?\n/).filter(line => line.trim());
