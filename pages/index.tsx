@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import YAML from "yaml";
-import { InputType, ConversionResult, DBType, TagType, SQLOptions } from "./types";
-import { convertToGo, formatJSON, formatYAML, TEMPLATES, validateFormat } from "./utils";
+import { InputType, ConversionResult, DBType, TagType, SQLOptions } from "../lib/types";
+import { convertToGo, formatJSON, formatYAML, TEMPLATES, validateFormat } from "../lib/utils";
 
 export default function Home() {
   const [input, setInput] = useState("");
