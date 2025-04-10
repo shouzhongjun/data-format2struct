@@ -110,17 +110,25 @@ export default function Home() {
       </h1>
 
       <div className="flex gap-4 mb-6 flex-wrap">
-        {["json", "yaml", "sql", "proto", "xml", "csv"].map((t) => (
+        {[
+          { type: "json", icon: "🔄" },
+          { type: "yaml", icon: "📝" },
+          { type: "sql", icon: "💾" },
+          { type: "proto", icon: "📦" },
+          { type: "xml", icon: "🌐" },
+          { type: "csv", icon: "📊" }
+        ].map(({ type: t, icon }) => (
           <button
             key={t}
-            className={"px-4 py-2 rounded-lg transition-all duration-200 " +
+            className={"px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2 " +
               (t === type
                 ? "bg-blue-600 text-white shadow-lg"
                 : "bg-white border hover:border-blue-400")
             }
             onClick={() => setType(t as InputType)}
           >
-            {t.toUpperCase()}
+            <span className="text-xl">{icon}</span>
+            <span>{t.toUpperCase()}</span>
           </button>
         ))}
       </div>
