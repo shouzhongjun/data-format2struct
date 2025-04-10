@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
-import YAML from "yaml";
-import { InputType, ConversionResult, DBType, TagType, SQLOptions } from "../lib/types";
-import { convertToGo, formatJSON, formatYAML, TEMPLATES, validateFormat } from "../lib/utils";
+import { InputType, ConversionResult, DBType, TagType, SQLOptions } from "@/lib/types";
+import { convertToGo, formatJSON, formatYAML, TEMPLATES, validateFormat } from "@/lib/utils";
 
 export default function Home() {
   const [input, setInput] = useState("");
   const [formattedInput, setFormattedInput] = useState("");
   const [type, setType] = useState<InputType>("json");
   const [result, setResult] = useState<ConversionResult>({ success: true, output: "" });
+  const [isCopied, setIsCopied] = useState(false);
   const [sqlOptions, setSqlOptions] = useState<SQLOptions>({
     dbType: "mysql",
     tagType: "gorm",
@@ -100,6 +100,17 @@ export default function Home() {
 
   const handleFormat = () => {
     setInput(formattedInput);
+  };
+
+  const handleCopy = async () => {
+    if (!result.output) return;
+    try {
+      await navigator.clipboard.writeText(result.output);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error('复制失败:', err);
+    }
   };
 
   return (
@@ -253,8 +264,21 @@ export default function Home() {
         </div>
 
         <div className="flex flex-col">
-          <div className="h-8 flex items-center">
+          <div className="h-8 flex items-center justify-between">
             <label className="text-xs text-gray-500">输出:</label>
+            {result.output && (
+              <button
+                onClick={handleCopy}
+                className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-blue-500 transition-colors"
+              >
+                <img 
+                  src={isCopied ? "/check.svg" : "/copy.svg"} 
+                  alt={isCopied ? "已复制" : "复制"} 
+                  className="w-4 h-4"
+                />
+                <span>{isCopied ? "已复制" : "复制"}</span>
+              </button>
+            )}
           </div>
           <div className="flex-1 relative bg-white rounded-lg shadow-sm min-h-[500px]">
             <pre 
