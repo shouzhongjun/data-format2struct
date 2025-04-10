@@ -122,7 +122,7 @@ export default function Home() {
 
       <div className="flex gap-4 mb-6 flex-wrap">
         {[
-          { type: "json", icon: "🔄" },
+          { type: "json", icon: "/JSON.svg" },
           { type: "yaml", icon: "📝" },
           { type: "sql", icon: "💾" },
           { type: "proto", icon: "📦" },
@@ -217,30 +217,35 @@ export default function Home() {
               加载示例
             </button>
           </div>
-          <textarea
-            rows={15}
-            className="w-full p-4 border rounded-lg font-mono text-sm shadow-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent"
-            placeholder={"请输入" + type.toUpperCase() + "内容..."}
-            value={input}
-            onChange={handleInputChange}
-          />
-          {/* {(type === "json" || type === "yaml") && formattedInput !== input && (
-            <div className="mt-2">
-              <p className="text-sm text-gray-500">预览格式化结果:</p>
-              <pre className="mt-1 p-4 bg-gray-50 rounded-lg text-sm overflow-auto max-h-[200px]">
-                {formattedInput}
-              </pre>
-            </div>
-          )} */}
+          <div className="relative h-[500px] bg-white rounded-lg shadow-sm">
+            <textarea
+              className="w-full h-full p-4 font-mono text-sm resize-none rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-opacity-50"
+              placeholder={"请输入" + type.toUpperCase() + "内容..."}
+              value={input}
+              onChange={handleInputChange}
+              style={{ 
+                backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+          </div>
         </div>
 
         <div>
           <label className="block mb-2 text-sm text-gray-600">输出:</label>
-          <pre className={"p-4 rounded-lg font-mono text-sm h-[360px] overflow-auto shadow-sm " +
-            (result.success ? "bg-white" : "bg-red-50")
-          }>
-            {result.output || "// 转换后的Go结构体将显示在这里..."}
-          </pre>
+          <div className="relative h-[500px] bg-white rounded-lg shadow-sm">
+            <pre 
+              className={"w-full h-full p-4 font-mono text-sm overflow-auto rounded-lg " +
+                (result.success ? "bg-opacity-50" : "bg-red-50")
+              }
+              style={{ 
+                backgroundColor: result.success ? 'rgba(255, 255, 255, 0.8)' : 'rgba(254, 242, 242, 0.8)',
+                backdropFilter: 'blur(4px)'
+              }}
+            >
+              {result.output || "// 转换后的Go结构体将显示在这里..."}
+            </pre>
+          </div>
         </div>
       </div>
 
