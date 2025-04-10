@@ -13,6 +13,7 @@ export default function Home() {
     tagType: "gorm",
     usePointer: true,
   });
+  const currentYear = new Date().getFullYear();
 
   useEffect(() => {
     if (!input.trim()) {
@@ -269,6 +270,11 @@ export default function Home() {
             </pre>
           </div>
         </div>
+      </div>
+      
+      {/* 版权信息 */}
+      <div className="mt-5 text-center text-sm text-gray-500">
+        © {currentYear} JSON-to-Go. Built with ♥ by <a href="https://vercel.com" target="_blank" rel="noopener noreferrer" className="hover:text-blue-500 transition-colors">Vercel</a>
       </div>
     </div>
   );
