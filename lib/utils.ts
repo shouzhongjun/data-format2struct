@@ -372,67 +372,6 @@ export function sqlToGoStruct(sql: string, options: SQLOptions): string {
   return result;
 }
 
-export const SQL_TEMPLATE = `-- 用户表示例
-id bigint
-username varchar(255)
-email varchar(255)
-password varchar(255)
-age int
-created_at datetime
-updated_at timestamp
-is_active boolean
-profile_data json
-`;
-
-// 添加格式校验函数
-export function validateFormat(input: string, type: 'json' | 'yaml' | 'sql' | 'proto' | 'xml' | 'csv'): { isValid: boolean; error?: string } {
-  if (!input.trim()) {
-    return { isValid: false, error: "输入内容为空" };
-  }
-
-  try {
-    switch (type) {
-      case 'json':
-        JSON.parse(input);
-        return { isValid: true };
-      case 'yaml':
-        YAML.parse(input);
-        return { isValid: true };
-      case 'sql':
-        const sqlLines = input.split(/\r?\n/).filter(line => line.trim() && !line.startsWith('--'));
-        if (sqlLines.length === 0) {
-          return { isValid: false, error: "没有找到有效的 SQL 字段定义" };
-        }
-        for (const line of sqlLines) {
-          const match = line.trim().match(/^[a-zA-Z0-9_]+\s+[a-zA-Z]+(\(\d+\))?$/i);
-          if (!match) {
-            return { isValid: false, error: `无效的 SQL 字段定义: ${line}` };
-          }
-        }
-        return { isValid: true };
-      case 'proto':
-        if (!input.includes('message')) {
-          return { isValid: false, error: "未找到 message 定义" };
-        }
-        return { isValid: true };
-      case 'xml':
-        new DOMParser().parseFromString(input, 'text/xml');
-        return { isValid: true };
-      case 'csv':
-        const csvLines = input.split(/\r?\n/).filter(line => line.trim());
-        if (csvLines.length < 2) {
-          return { isValid: false, error: "CSV 至少需要包含标题行和一行数据" };
-        }
-        return { isValid: true };
-      default:
-        return { isValid: false, error: "不支持的格式类型" };
-    }
-  } catch (e) {
-    return { isValid: false, error: `格式错误: ${e instanceof Error ? e.message : '未知错误'}` };
-  }
-}
-
-// 添加示例模板
 export const TEMPLATES = {
   json: `{
   "id": 1,
@@ -459,7 +398,16 @@ tags:
 profile:
   address: 123 Street
   phone: "1234567890"`,
-  sql: SQL_TEMPLATE,
+  sql: `CREATE TABLE users (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  username VARCHAR(50) NOT NULL,
+  email VARCHAR(100) UNIQUE,
+  age INT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME,
+  is_active BOOLEAN DEFAULT true,
+  profile_data JSON
+)`,
   proto: `syntax = "proto3";
 
 package example;
@@ -754,4 +702,76 @@ function getGoType(sqlType: string, dbType: DBType): string {
   };
 
   return typeMap[dbType][sqlType] || 'interface{}';
+}
+
+// 添加格式校验函数
+export function validateFormat(input: string, type: 'json' | 'yaml' | 'sql' | 'proto' | 'xml' | 'csv'): { isValid: boolean; error?: string } {
+  if (!input.trim()) {
+    return { isValid: false, error: "输入内容为空" };
+  }
+
+  try {
+    switch (type) {
+      case 'json':
+        JSON.parse(input);
+        return { isValid: true };
+      case 'yaml':
+        YAML.parse(input);
+        return { isValid: true };
+      case 'sql':
+        const sqlInput = input.toLowerCase().trim();
+        if (!sqlInput.startsWith('create table')) {
+          return { isValid: false, error: "SQL 必须以 CREATE TABLE 开始" };
+        }
+        
+        // 提取表名和字段定义部分
+        const tableMatch = sqlInput.match(/create\s+table\s+(\w+)\s*\(([\s\S]*)\)/i);
+        if (!tableMatch) {
+          return { isValid: false, error: "无效的 CREATE TABLE 语句格式" };
+        }
+        
+        const [, tableName, fieldsStr] = tableMatch;
+        if (!tableName) {
+          return { isValid: false, error: "未找到表名" };
+        }
+        
+        const fields = fieldsStr
+          .split(',')
+          .map(f => f.trim())
+          .filter(f => f);
+          
+        if (fields.length === 0) {
+          return { isValid: false, error: "未找到字段定义" };
+        }
+        
+        // 验证每个字段的格式
+        for (const field of fields) {
+          // 基本字段格式：字段名 类型 [可选约束]
+          const fieldMatch = field.match(/^[a-zA-Z0-9_]+\s+[a-zA-Z0-9_]+(\([0-9,]+\))?\s*(.*)?$/i);
+          if (!fieldMatch) {
+            return { isValid: false, error: `无效的字段定义: ${field}` };
+          }
+        }
+        
+        return { isValid: true };
+      case 'proto':
+        if (!input.includes('message')) {
+          return { isValid: false, error: "未找到 message 定义" };
+        }
+        return { isValid: true };
+      case 'xml':
+        new DOMParser().parseFromString(input, 'text/xml');
+        return { isValid: true };
+      case 'csv':
+        const csvLines = input.split(/\r?\n/).filter(line => line.trim());
+        if (csvLines.length < 2) {
+          return { isValid: false, error: "CSV 至少需要包含标题行和一行数据" };
+        }
+        return { isValid: true };
+      default:
+        return { isValid: false, error: "不支持的格式类型" };
+    }
+  } catch (e) {
+    return { isValid: false, error: `格式错误: ${e instanceof Error ? e.message : '未知错误'}` };
+  }
 } 
