@@ -104,7 +104,12 @@ export default function Home() {
   return (
     <div className="min-h-screen p-8 bg-gray-100 font-mono">
       <h1 className="text-3xl font-bold mb-6 flex items-center gap-3">
-        <img src="/gopher.png" alt="Go Gopher" className="w-10 h-10" />
+        <img 
+          src="/gopher.png" 
+          alt="Go Gopher" 
+          className="w-12 h-12 object-cover rounded-lg"
+          style={{ imageRendering: 'pixelated' }}
+        />
         <div className="flex flex-col">
           <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-green-500">
             Go Struct
