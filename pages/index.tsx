@@ -120,104 +120,124 @@ export default function Home() {
         </div>
       </h1>
 
-      <div className="flex gap-4 mb-6 flex-wrap">
-        {[
-          { type: "json", icon: "/JSON.svg" },
-          { type: "yaml", icon: "📝" },
-          { type: "sql", icon: "💾" },
-          { type: "proto", icon: "📦" },
-          { type: "xml", icon: "🌐" },
-          { type: "csv", icon: "📊" }
-        ].map(({ type: t, icon }) => (
-          <button
-            key={t}
-            className={"px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2 " +
-              (t === type
-                ? "bg-blue-600 text-white shadow-lg"
-                : "bg-white border hover:border-blue-400")
-            }
-            onClick={() => setType(t as InputType)}
-          >
-            <span className="text-xl">{icon}</span>
-            <span>{t.toUpperCase()}</span>
-          </button>
-        ))}
-      </div>
-
-      {type === "sql" && (
-        <div className="mb-6 grid grid-cols-3 gap-6">
-          <div>
-            <label className="block mb-2 text-sm text-gray-600">数据库类型:</label>
-            <select
-              className="w-full p-2 border rounded-lg"
-              value={sqlOptions.dbType}
-              onChange={(e) => setSqlOptions({ ...sqlOptions, dbType: e.target.value as DBType })}
+      <div className="flex gap-4 mb-6 flex-wrap items-center justify-between">
+        <div className="flex gap-4 flex-wrap">
+          {[
+            { type: "json", icon: "/json.svg" },
+            { type: "yaml", icon: "/yaml.svg" },
+            { type: "sql", icon: "/sql.svg" },
+            { type: "proto", icon: "/proto.svg" },
+            { type: "xml", icon: "/xml.svg" },
+            { type: "csv", icon: "/csv.svg" }
+          ].map(({ type: t, icon }) => (
+            <button
+              key={t}
+              className={"px-3 py-1.5 rounded-lg transition-all duration-200 flex items-center gap-2 " +
+                (t === type
+                  ? "bg-gradient-to-r from-blue-500 to-green-500 text-white shadow-lg"
+                  : "bg-white border hover:border-blue-400")
+              }
+              onClick={() => setType(t as InputType)}
             >
-              <option value="mysql">MySQL</option>
-              <option value="postgres">PostgreSQL</option>
-              <option value="sqlite">SQLite</option>
-              <option value="oracle">Oracle</option>
-            </select>
-          </div>
-          <div>
-            <label className="block mb-2 text-sm text-gray-600">标签类型:</label>
-            <select
-              className="w-full p-2 border rounded-lg"
-              value={sqlOptions.tagType}
-              onChange={(e) => setSqlOptions({ ...sqlOptions, tagType: e.target.value as TagType })}
-            >
-              <option value="db">database/sql</option>
-              <option value="gorm">GORM</option>
-              <option value="xorm">XORM</option>
-            </select>
-          </div>
-          <div>
-            <label className="block mb-2 text-sm text-gray-600">字段类型:</label>
-            <div className="flex items-center mt-2">
-              <input
-                type="checkbox"
-                className="mr-2"
-                checked={sqlOptions.usePointer}
-                onChange={(e) => setSqlOptions({ ...sqlOptions, usePointer: e.target.checked })}
-              />
-              <span className="text-sm text-gray-600">使用指针类型</span>
-            </div>
-          </div>
+              {icon.startsWith('/') ? (
+                <img src={icon} alt={t} className="w-5 h-5" />
+              ) : (
+                <span className="text-lg">{icon}</span>
+              )}
+              <span className="text-sm">{t.toUpperCase()}</span>
+            </button>
+          ))}
         </div>
-      )}
-
-      <div className="mb-4">
-        <label className="block mb-2 text-sm text-gray-600">
-          选择文件（可选）:
-          <input
-            type="file"
-            accept=".json,.yaml,.yml,.sql,.txt"
-            onChange={handleFileUpload}
-            className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-          />
-        </label>
+        <div className="flex gap-4">
+          <button
+            className="px-6 py-2 bg-gradient-to-r from-violet-500 to-violet-600 text-white rounded-lg hover:from-violet-600 hover:to-violet-700 transition-all duration-200 flex items-center gap-2 shadow-sm hover:shadow-md active:scale-95 active:shadow-inner transform will-change-transform"
+            onClick={handleConvert}
+          >
+            <img src="/convert.svg" alt="转换" className="w-5 h-5 transition-transform duration-500 group-active:rotate-180 will-change-transform" />
+            <span>转换</span>
+          </button>
+          <button
+            className={"px-6 py-2 rounded-lg transition-all duration-200 flex items-center gap-2 shadow-sm hover:shadow-md transform will-change-transform " +
+              (result.success
+                ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 active:scale-95 active:shadow-inner"
+                : "bg-gray-300 text-gray-500 cursor-not-allowed")
+            }
+            onClick={handleDownload}
+            disabled={!result.success}
+          >
+            <img src="/export.svg" alt="导出" className="w-5 h-5 transition-transform duration-200 active:translate-y-0.5 will-change-transform" />
+            <span>导出</span>
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-6">
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <label className="text-sm text-gray-600">输入:</label>
-            {(type === "json" || type === "yaml") && (
+        <div className="flex flex-col">
+          <div className="h-8 flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              <label className="text-xs text-gray-500">输入:</label>
+              <input
+                type="file"
+                accept=".json,.yaml,.yml,.sql,.txt"
+                onChange={handleFileUpload}
+                className="text-xs text-gray-500 
+                  file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 
+                  file:text-xs file:font-medium file:bg-gradient-to-r file:from-blue-500 
+                  file:to-green-500 file:text-white hover:file:from-blue-600 
+                  hover:file:to-green-600 file:transition-all file:duration-200 
+                  file:shadow-sm"
+              />
+            </div>
+            <div className="flex items-center gap-4">
+              {type === "sql" && (
+                <>
+                  <select
+                    className="px-2 py-1 border rounded-lg text-xs bg-white"
+                    value={sqlOptions.dbType}
+                    onChange={(e) => setSqlOptions({ ...sqlOptions, dbType: e.target.value as DBType })}
+                  >
+                    <option value="mysql">MySQL</option>
+                    <option value="postgres">PostgreSQL</option>
+                    <option value="sqlite">SQLite</option>
+                    <option value="oracle">Oracle</option>
+                  </select>
+                  <select
+                    className="px-2 py-1 border rounded-lg text-xs bg-white"
+                    value={sqlOptions.tagType}
+                    onChange={(e) => setSqlOptions({ ...sqlOptions, tagType: e.target.value as TagType })}
+                  >
+                    <option value="db">database/sql</option>
+                    <option value="gorm">GORM</option>
+                    <option value="xorm">XORM</option>
+                  </select>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      className="w-3 h-3"
+                      checked={sqlOptions.usePointer}
+                      onChange={(e) => setSqlOptions({ ...sqlOptions, usePointer: e.target.checked })}
+                    />
+                    <span className="text-xs text-gray-500">指针</span>
+                  </div>
+                </>
+              )}
+              {(type === "json" || type === "yaml") && (
+                <button
+                  onClick={handleFormat}
+                  className="text-xs text-blue-600 hover:text-blue-700"
+                >
+                  格式化
+                </button>
+              )}
               <button
-                onClick={handleFormat}
-                className="text-sm text-blue-600 hover:text-blue-700"
+                onClick={() => setInput(TEMPLATES[type])}
+                className="text-xs text-blue-600 hover:text-blue-700"
               >
-                格式化
+                加载示例
               </button>
-            )}
-            <button
-              onClick={() => setInput(TEMPLATES[type])}
-              className="text-sm text-blue-600 hover:text-blue-700"
-            >
-              加载示例
-            </button>
+            </div>
           </div>
-          <div className="relative h-[500px] bg-white rounded-lg shadow-sm">
+          <div className="flex-1 relative bg-white rounded-lg shadow-sm min-h-[500px]">
             <textarea
               className="w-full h-full p-4 font-mono text-sm resize-none rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-transparent bg-opacity-50"
               placeholder={"请输入" + type.toUpperCase() + "内容..."}
@@ -231,15 +251,17 @@ export default function Home() {
           </div>
         </div>
 
-        <div>
-          <label className="block mb-2 text-sm text-gray-600">输出:</label>
-          <div className="relative h-[500px] bg-white rounded-lg shadow-sm">
+        <div className="flex flex-col">
+          <div className="h-8 flex items-center">
+            <label className="text-xs text-gray-500">输出:</label>
+          </div>
+          <div className="flex-1 relative bg-white rounded-lg shadow-sm min-h-[500px]">
             <pre 
               className={"w-full h-full p-4 font-mono text-sm overflow-auto rounded-lg " +
-                (result.success ? "bg-opacity-50" : "bg-red-50")
+                (result.success ? "bg-gray-50" : "bg-red-50")
               }
               style={{ 
-                backgroundColor: result.success ? 'rgba(255, 255, 255, 0.8)' : 'rgba(254, 242, 242, 0.8)',
+                backgroundColor: result.success ? 'rgba(249, 250, 251, 0.8)' : 'rgba(254, 242, 242, 0.8)',
                 backdropFilter: 'blur(4px)'
               }}
             >
@@ -247,26 +269,6 @@ export default function Home() {
             </pre>
           </div>
         </div>
-      </div>
-
-      <div className="mt-6 flex gap-4">
-        <button
-          className="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors duration-200 flex items-center gap-2 shadow-sm"
-          onClick={handleConvert}
-        >
-          🚀 转换
-        </button>
-        <button
-          className={"px-6 py-2 rounded-lg transition-colors duration-200 flex items-center gap-2 shadow-sm " +
-            (result.success
-              ? "bg-blue-500 text-white hover:bg-blue-600"
-              : "bg-gray-300 text-gray-500 cursor-not-allowed")
-          }
-          onClick={handleDownload}
-          disabled={!result.success}
-        >
-          ⬇️ 导出
-        </button>
       </div>
     </div>
   );
