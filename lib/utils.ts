@@ -305,56 +305,168 @@ const sqlTypeMap: Record<string, Record<DBType, string>> = {
   },
 };
 
-function generateTags(fieldName: string, options: SQLOptions): string {
+function generateTags(fieldName: string, options: SQLOptions, comment: string = '', defaultValue: string = ''): string {
   const tags: string[] = [];
-  
+
   // 添加 json 和 yaml 标签
   tags.push(`json:"${fieldName.toLowerCase()}" yaml:"${fieldName.toLowerCase()}"`);
-  
+
   // 根据选择的标签类型添加数据库标签
   switch (options.tagType) {
     case 'db':
       tags.push(`db:"${fieldName.toLowerCase()}"`);
+      if (defaultValue) {
+        tags.push(`default:"${defaultValue.replace(/"/g, '\\"')}"`);
+      }
       break;
     case 'gorm':
-      tags.push(`gorm:"column:${fieldName.toLowerCase()}"`);
+      const gormTag = [`column:${fieldName.toLowerCase()}`];
+      if (comment) {
+        gormTag.push(`comment:'${comment.replace(/'/g, "\\'")}'`);
+      }
+      if (defaultValue) {
+        // Remove quotes from default value if it's a quoted string
+        const cleanDefault = defaultValue.replace(/^['"](.*)['"]$/, '$1');
+        gormTag.push(`default:${cleanDefault}`);
+      }
+      tags.push(`gorm:"${gormTag.join(';')}"`);
       break;
     case 'xorm':
-      tags.push(`xorm:"'${fieldName.toLowerCase()}'"`);
+      const xormTag = [`'${fieldName.toLowerCase()}'`];
+      if (comment) {
+        xormTag.push(`comment('${comment.replace(/'/g, "\\'")}')`);
+      }
+      if (defaultValue) {
+        // Remove quotes from default value if it's a quoted string
+        const cleanDefault = defaultValue.replace(/^['"](.*)['"]$/, '$1');
+        xormTag.push(`default(${cleanDefault})`);
+      }
+      tags.push(`xorm:"${xormTag.join(' ')}"`);
       break;
+    default:
+      if (comment) {
+        tags.push(`comment:"${comment.replace(/"/g, '\\"')}"`);
+      }
+      if (defaultValue) {
+        tags.push(`default:"${defaultValue.replace(/"/g, '\\"')}"`);
+      }
   }
-  
+
   return '`' + tags.join(' ') + '`';
 }
 
 export function sqlToGoStruct(sql: string, options: SQLOptions): string {
-  const tableMatch = sql.match(/CREATE\s+TABLE\s+`?(\w+)`?\s*\(([\s\S]+)\)/i);
-  if (!tableMatch) {
+  console.log("Processing SQL:", sql.substring(0, 100) + "...");
+
+  // Extract only the CREATE TABLE statement, ignoring any CREATE INDEX or other statements
+  const createTableMatch = sql.match(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`|"|')?(\w+)(?:`|"|')?\s*\(([^;]*(?:\([^)]*\)[^;]*)*)\)/i);
+  if (!createTableMatch) {
+    console.error("Table match failed");
     throw new Error('Invalid SQL CREATE TABLE statement');
   }
 
-  const [, tableName, columnsStr] = tableMatch;
+  const [, tableName, columnsStr] = createTableMatch;
+  console.log("Table name:", tableName);
+  console.log("Columns string length:", columnsStr.length);
+
   const structName = toPascalCase(tableName);
-  const columns = columnsStr.split(',').map(col => col.trim());
-  
+  console.log("Struct name:", structName);
+
+  // More robust column parsing that handles multi-line definitions, enum types, comments, default values, and various SQL syntax
+  const columnRegex = /(?:`|"|')?(\w+)(?:`|"|')?\s+(?:(enum)\s+\(([^)]+)\)|([^\s,]+(?:\s+[^\s,]+)*)\s*(?:\(([^)]+)\))?)(?:\s+([^,]*?))?(?:\s+default\s+([^\s,]+|'[^']*'|"[^"]*"))?(?:\s+comment\s+(?:'([^']*)'|"([^"]*)"))?(?:,|$)/gim;
+
   let structFields: string[] = [];
   let imports = new Set<string>();
+  let debugInfo: any[] = [];
 
-  for (const column of columns) {
-    const match = column.match(/`?(\w+)`?\s+([^()]+?)(?:\([^)]+\))?\s*(?:COMMENT\s+'[^']*')?(?:,|\s*$)/i);
-    if (!match) continue;
+  // Process each column definition
+  let match;
+  let matchCount = 0;
+  while ((match = columnRegex.exec(columnsStr)) !== null) {
+    matchCount++;
+    console.log(`Match ${matchCount}:`, match[0].substring(0, 50) + (match[0].length > 50 ? "..." : ""));
 
-    const [, fieldName, sqlType] = match;
-    const goType = getGoType(sqlType.trim().toUpperCase(), options.dbType);
-    
+    // Skip if this is a constraint or key definition, not a column
+    if (/^(?:PRIMARY|FOREIGN|UNIQUE|CHECK|INDEX|KEY|CONSTRAINT)\s+/i.test(match[0])) {
+      console.log(`  Skipping constraint/key: ${match[0].substring(0, 30)}...`);
+      continue;
+    }
+
+    const fieldName = match[1];
+
+    // Handle enum type specially
+    let sqlTypeBase, sqlTypeParams, constraints;
+    let isEnum = false;
+    let enumValues = '';
+
+    // Extract default value
+    const defaultValue = match[7] || '';
+
+    // Extract comment (either from group 8 or 9 depending on quote style)
+    const comment = match[8] || match[9] || '';
+
+    if (match[2] && match[2].trim().toUpperCase() === 'ENUM') {
+      sqlTypeBase = 'ENUM';
+      sqlTypeParams = match[3] ? match[3].trim() : '';
+      enumValues = sqlTypeParams;
+      isEnum = true;
+      constraints = match[6] ? match[6].trim().toUpperCase() : '';
+    } else {
+      sqlTypeBase = match[4] ? match[4].trim().toUpperCase() : '';
+      sqlTypeParams = match[5] ? match[5].trim() : '';
+      constraints = match[6] ? match[6].trim().toUpperCase() : '';
+    }
+
+    // Debug info
+    const debugEntry = {
+      fieldName,
+      sqlTypeBase,
+      sqlTypeParams,
+      constraints,
+      isEnum,
+      enumValues: isEnum ? enumValues : undefined,
+      defaultValue,
+      comment,
+      matchGroups: match.map(m => m?.substring(0, 30) + (m?.length > 30 ? "..." : "") || "undefined")
+    };
+    debugInfo.push(debugEntry);
+    console.log(`  Field: ${fieldName}, Type: ${sqlTypeBase}${sqlTypeParams ? `(${sqlTypeParams})` : ''}, Constraints: ${constraints}${sqlTypeBase === 'ENUM' ? ', Is Enum: true' : ''}${defaultValue ? `, Default: ${defaultValue}` : ''}${comment ? `, Comment: ${comment}` : ''}`);
+
+    // Check if column is nullable
+    const isNullable = !constraints.includes('NOT NULL') && !constraints.includes('PRIMARY KEY');
+
+    // Check if column is unsigned (for numeric types)
+    const isUnsigned = constraints.includes('UNSIGNED');
+
+    // Get the appropriate Go type
+    const goType = getGoType(sqlTypeBase, options.dbType, { 
+      isUnsigned, 
+      typeParams: sqlTypeParams,
+      isEnum,
+      enumValues
+    });
+    console.log(`  Go type: ${goType}, Nullable: ${isNullable}, Unsigned: ${isUnsigned}`);
+
     if (goType.includes('time.Time')) {
       imports.add('time');
     }
-    
-    const fieldType = options.usePointer ? `*${goType}` : goType;
-    const tags = generateTags(fieldName, options);
+
+    if (goType.includes('json.RawMessage')) {
+      imports.add('encoding/json');
+    }
+
+    // Determine if we should use a pointer type (for nullable fields)
+    const usePointer = options.usePointer || (isNullable && !goType.startsWith('*'));
+    const fieldType = usePointer ? `*${goType}` : goType;
+
+    // Generate struct tags
+    const tags = generateTags(fieldName, options, comment, defaultValue);
+
     structFields.push(`\t${toPascalCase(fieldName)} ${fieldType} ${tags}`);
   }
+
+  console.log(`Total matches: ${matchCount}`);
+  console.log("Debug info:", JSON.stringify(debugInfo, null, 2));
 
   let result = '';
   if (imports.size > 0) {
@@ -482,7 +594,7 @@ function protoToGo(proto: string): string {
         const goType = protoTypeToGo(type);
         const fieldName = capitalizeFirst(name);
         const fieldType = repeated ? `[]${goType}` : goType;
-        
+
         if (goType === "time.Time") {
           imports.add('time');
         }
@@ -531,26 +643,26 @@ function xmlToGo(xml: string): string {
   try {
     // 移除 XML 声明
     xml = xml.replace(/<\?xml[^>]+\?>/, '').trim();
-    
+
     // 提取根元素名称
     const rootMatch = xml.match(/<([^\s>]+)/);
     if (!rootMatch) {
       throw new Error('无法找到根元素');
     }
-    
+
     const rootName = rootMatch[1];
     const structName = toPascalCase(rootName);
     let struct = `type ${structName} struct {\n`;
-    
+
     // 提取字段
     const fields = new Map<string, { type: string; isArray: boolean }>();
     const fieldRegex = /<([^>/]+)>([^<]*)<\/\1>/g;
     let match;
-    
+
     while ((match = fieldRegex.exec(xml)) !== null) {
       const [, fieldName, value] = match;
       const existingField = fields.get(fieldName);
-      
+
       if (existingField) {
         existingField.isArray = true;
       } else {
@@ -560,14 +672,14 @@ function xmlToGo(xml: string): string {
         });
       }
     }
-    
+
     // 生成结构体字段
     for (const [fieldName, { type, isArray }] of fields) {
       const goFieldName = toPascalCase(fieldName);
       const goFieldType = isArray ? `[]${type}` : type;
       struct += `\t${goFieldName} ${goFieldType} \`xml:"${fieldName}" json:"${fieldName}"\`\n`;
     }
-    
+
     struct += "}\n";
     return struct;
   } catch (e) {
@@ -592,16 +704,16 @@ function csvToGo(csv: string): string {
 
   const headers = lines[0].split(',').map(h => h.trim());
   const firstRow = lines[1].split(',').map(v => v.trim());
-  
+
   let struct = "type AutoGen struct {\n";
-  
+
   for (let i = 0; i < headers.length; i++) {
     const fieldName = capitalizeFirst(headers[i]);
     const value = firstRow[i];
     const type = inferTypeFromValue(value);
     struct += `\t${fieldName} ${type} \`json:"${headers[i]}"\`\n`;
   }
-  
+
   struct += "}\n";
   return struct;
 }
@@ -627,69 +739,177 @@ export function convertToGo(input: string, type: 'json' | 'yaml' | 'sql' | 'prot
 }
 
 function toPascalCase(str: string): string {
-  return str
-    .toLowerCase()
+  // Handle common table name prefixes
+  let result = str.toLowerCase();
+
+  // Remove common prefixes like t_, tbl_, etc.
+  const prefixRegex = /^(t_|tbl_)/;
+  result = result.replace(prefixRegex, '');
+
+  // Handle reserved words or problematic field names
+  const reservedWords = [
+    'create', 'update', 'delete', 'select', 'insert', 
+    'from', 'where', 'group', 'order', 'having', 'limit',
+    'offset', 'join', 'union', 'type', 'interface', 'struct',
+    'func', 'package', 'import', 'map', 'chan', 'go', 'defer'
+  ];
+
+  if (reservedWords.includes(result)) {
+    return capitalizeFirst(result) + 'Field';
+  }
+
+  // Convert to PascalCase
+  return result
     .split('_')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join('');
 }
 
-function getGoType(sqlType: string, dbType: DBType): string {
+interface GoTypeOptions {
+  isUnsigned?: boolean;
+  typeParams?: string;
+  isEnum?: boolean;
+  enumValues?: string;
+}
+
+function getGoType(sqlType: string, dbType: DBType, options: GoTypeOptions = {}): string {
+  // Handle enum type specially
+  const { isUnsigned = false, typeParams = '', isEnum = false, enumValues = '' } = options;
+
+  if (isEnum) {
+    console.log(`  Processing enum with values: ${enumValues}`);
+    // For enums, we'll use string type in Go
+    return 'string';
+  }
+
+  // Normalize SQL type by removing extra spaces and converting to uppercase
+  const normalizedType = sqlType.replace(/\s+/g, ' ').trim().toUpperCase();
+
+  // Extract the base type (without size/precision parameters)
+  const baseType = normalizedType.split(' ')[0];
+
+  // Define type mappings for each database
   const typeMap: Record<DBType, Record<string, string>> = {
     mysql: {
-      'int': 'int',
-      'bigint': 'int64',
-      'varchar': 'string',
-      'text': 'string',
-      'datetime': 'time.Time',
-      'timestamp': 'time.Time',
-      'boolean': 'bool',
-      'decimal': 'float64',
-      'float': 'float32',
-      'double': 'float64',
-      'json': 'json.RawMessage',
-      'blob': '[]byte',
+      'INT': isUnsigned ? 'uint' : 'int',
+      'TINYINT': isUnsigned ? 'uint8' : 'int8',
+      'SMALLINT': isUnsigned ? 'uint16' : 'int16',
+      'MEDIUMINT': isUnsigned ? 'uint32' : 'int32',
+      'BIGINT': isUnsigned ? 'uint64' : 'int64',
+      'DECIMAL': 'float64',
+      'NUMERIC': 'float64',
+      'FLOAT': 'float32',
+      'DOUBLE': 'float64',
+      'BIT': 'uint8',
+      'CHAR': 'string',
+      'VARCHAR': 'string',
+      'TINYTEXT': 'string',
+      'TEXT': 'string',
+      'MEDIUMTEXT': 'string',
+      'LONGTEXT': 'string',
+      'BINARY': '[]byte',
+      'VARBINARY': '[]byte',
+      'TINYBLOB': '[]byte',
+      'BLOB': '[]byte',
+      'MEDIUMBLOB': '[]byte',
+      'LONGBLOB': '[]byte',
+      'DATE': 'time.Time',
+      'TIME': 'time.Time',
+      'DATETIME': 'time.Time',
+      'TIMESTAMP': 'time.Time',
+      'YEAR': 'int',
+      'BOOLEAN': 'bool',
+      'BOOL': 'bool',
+      'ENUM': 'string',
+      'SET': 'string',
+      'JSON': 'json.RawMessage',
     },
     postgres: {
-      'integer': 'int',
-      'bigint': 'int64',
-      'varchar': 'string',
-      'text': 'string',
-      'timestamp': 'time.Time',
-      'boolean': 'bool',
-      'decimal': 'float64',
-      'real': 'float32',
-      'double precision': 'float64',
-      'json': 'json.RawMessage',
-      'jsonb': 'json.RawMessage',
-      'bytea': '[]byte',
+      'SMALLINT': isUnsigned ? 'uint16' : 'int16',
+      'INTEGER': isUnsigned ? 'uint32' : 'int',
+      'BIGINT': isUnsigned ? 'uint64' : 'int64',
+      'DECIMAL': 'float64',
+      'NUMERIC': 'float64',
+      'REAL': 'float32',
+      'DOUBLE PRECISION': 'float64',
+      'MONEY': 'float64',
+      'CHAR': 'string',
+      'CHARACTER': 'string',
+      'VARCHAR': 'string',
+      'CHARACTER VARYING': 'string',
+      'TEXT': 'string',
+      'BYTEA': '[]byte',
+      'DATE': 'time.Time',
+      'TIME': 'time.Time',
+      'TIMESTAMP': 'time.Time',
+      'TIMESTAMPTZ': 'time.Time',
+      'INTERVAL': 'time.Duration',
+      'BOOLEAN': 'bool',
+      'UUID': 'string',
+      'JSON': 'json.RawMessage',
+      'JSONB': 'json.RawMessage',
+      'SERIAL': 'int',
+      'BIGSERIAL': 'int64',
+      'SMALLSERIAL': 'int16',
     },
     sqlite: {
-      'integer': 'int64',
-      'text': 'string',
-      'varchar': 'string',
-      'datetime': 'time.Time',
-      'boolean': 'bool',
-      'real': 'float64',
-      'blob': '[]byte',
+      'INTEGER': isUnsigned ? 'uint64' : 'int64',
+      'REAL': 'float64',
+      'TEXT': 'string',
+      'BLOB': '[]byte',
+      'NUMERIC': 'float64',
+      'BOOLEAN': 'bool',
+      'DATETIME': 'time.Time',
+      'DATE': 'time.Time',
+      'VARCHAR': 'string',
     },
     oracle: {
-      'number': 'int64',
-      'varchar2': 'string',
-      'nvarchar2': 'string',
-      'clob': 'string',
-      'nclob': 'string',
-      'date': 'time.Time',
-      'timestamp': 'time.Time',
-      'float': 'float64',
-      'binary_float': 'float32',
-      'binary_double': 'float64',
-      'raw': '[]byte',
-      'blob': '[]byte',
+      'NUMBER': typeParams && typeParams.includes(',') ? 'float64' : (isUnsigned ? 'uint64' : 'int64'),
+      'INTEGER': isUnsigned ? 'uint64' : 'int64',
+      'FLOAT': 'float64',
+      'BINARY_FLOAT': 'float32',
+      'BINARY_DOUBLE': 'float64',
+      'VARCHAR2': 'string',
+      'NVARCHAR2': 'string',
+      'CHAR': 'string',
+      'NCHAR': 'string',
+      'CLOB': 'string',
+      'NCLOB': 'string',
+      'RAW': '[]byte',
+      'BLOB': '[]byte',
+      'DATE': 'time.Time',
+      'TIMESTAMP': 'time.Time',
+      'TIMESTAMP WITH TIME ZONE': 'time.Time',
+      'TIMESTAMP WITH LOCAL TIME ZONE': 'time.Time',
+      'INTERVAL YEAR TO MONTH': 'string',
+      'INTERVAL DAY TO SECOND': 'string',
     },
   };
 
-  return typeMap[dbType][sqlType] || 'interface{}';
+  // Special case for BOOLEAN in MySQL (TINYINT(1))
+  if (dbType === 'mysql' && baseType === 'TINYINT' && typeParams === '1') {
+    return 'bool';
+  }
+
+  // Try to find the type in the map
+  const goType = typeMap[dbType][baseType];
+
+  // If not found, try to match with a more flexible approach
+  if (!goType) {
+    // Check for partial matches (e.g., "INT" should match "INT UNSIGNED")
+    for (const [sqlTypeKey, goTypeValue] of Object.entries(typeMap[dbType])) {
+      if (baseType.includes(sqlTypeKey)) {
+        return isUnsigned && sqlTypeKey.startsWith('INT') ? 
+          goTypeValue.replace('int', 'uint') : 
+          goTypeValue;
+      }
+    }
+
+    // Default fallback
+    return 'interface{}';
+  }
+
+  return goType;
 }
 
 // 添加格式校验函数
@@ -707,40 +927,55 @@ export function validateFormat(input: string, type: 'json' | 'yaml' | 'sql' | 'p
         YAML.parse(input);
         return { isValid: true };
       case 'sql':
-        const sqlInput = input.toLowerCase().trim();
-        if (!sqlInput.startsWith('create table')) {
+        const sqlInput = input.trim();
+        // Check if it starts with CREATE TABLE (case insensitive)
+        if (!/^create\s+table/i.test(sqlInput)) {
           return { isValid: false, error: "SQL 必须以 CREATE TABLE 开始" };
         }
-        
-        // 提取表名和字段定义部分
-        const tableMatch = sqlInput.match(/create\s+table\s+(\w+)\s*\(([\s\S]*)\)/i);
+
+        // Extract table name and column definitions with improved regex
+        const tableMatch = sqlInput.match(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`|"|')?(\w+)(?:`|"|')?\s*\(([\s\S]+)\)/i);
         if (!tableMatch) {
           return { isValid: false, error: "无效的 CREATE TABLE 语句格式" };
         }
-        
-        const [, tableName, fieldsStr] = tableMatch;
+
+        const [, tableName, columnsStr] = tableMatch;
         if (!tableName) {
           return { isValid: false, error: "未找到表名" };
         }
-        
-        const fields = fieldsStr
-          .split(',')
-          .map(f => f.trim())
-          .filter(f => f);
-          
-        if (fields.length === 0) {
-          return { isValid: false, error: "未找到字段定义" };
-        }
-        
-        // 验证每个字段的格式
-        for (const field of fields) {
-          // 基本字段格式：字段名 类型 [可选约束]
-          const fieldMatch = field.match(/^[a-zA-Z0-9_]+\s+[a-zA-Z0-9_]+(\([0-9,]+\))?\s*(.*)?$/i);
-          if (!fieldMatch) {
-            return { isValid: false, error: `无效的字段定义: ${field}` };
+
+        // Use the same regex as in sqlToGoStruct for consistency
+        const columnRegex = /(?:`|"|')?(\w+)(?:`|"|')?\s+([^\s,]+(?:\s+[^\s,]+)*)(?:\s*\(([^)]+)\))?(?:\s+([^,]*?))?(?:,|$)/gim;
+
+        let match;
+        let columnCount = 0;
+
+        // Check each column definition
+        while ((match = columnRegex.exec(columnsStr)) !== null) {
+          // Skip if this is a constraint or key definition, not a column
+          if (/^(?:PRIMARY|FOREIGN|UNIQUE|CHECK|INDEX|KEY|CONSTRAINT)\s+/i.test(match[0])) {
+            continue;
+          }
+
+          columnCount++;
+
+          // Validate column name
+          const fieldName = match[1];
+          if (!fieldName || !/^\w+$/.test(fieldName)) {
+            return { isValid: false, error: `无效的字段名: ${fieldName}` };
+          }
+
+          // Validate column type
+          const sqlType = match[2];
+          if (!sqlType) {
+            return { isValid: false, error: `未指定字段类型: ${match[0]}` };
           }
         }
-        
+
+        if (columnCount === 0) {
+          return { isValid: false, error: "未找到有效的字段定义" };
+        }
+
         return { isValid: true };
       case 'proto':
         if (!input.includes('message')) {
